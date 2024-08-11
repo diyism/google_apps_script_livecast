@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Capture</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #video { margin: 20px auto; border: 1px solid #ccc; }
+        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+        #status { margin-top: 20px; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Video Capture</h1>
+    <video id="video" width="320" height="240" autoplay></video>
+    <br>
+    <button id="startButton">Start Capture</button>
+    <button id="stopButton" disabled>Stop Capture</button>
+    <div id="status"></div>
+
+    <script>
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        const MAX_CHUNK_SIZE = 64 * 1024; // 64KB chunks
+
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDiv = document.getElementById('status');
+
+        startButton.onclick = startCapture;
+        stopButton.onclick = stopCapture;
+
+        async function startCapture() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 320, height: 240, frameRate: 15 }
+                });
+                document.getElementById('video').srcObject = stream;
+
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'video/webm;codecs=vp8',
+                    videoBitsPerSecond: 100000 // 100Kbps
+                });
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                        sendChunksToServer();
+                    }
+                };
+                mediaRecorder.start(1000); // Capture in 1-second intervals
+                isRecording = true;
+                updateUI();
+            } catch (err) {
+                console.error("Error: " + err);
+                statusDiv.textContent = "Failed to start capture: " + err.message;
+            }
+        }
+
+        function stopCapture() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                updateUI();
+                statusDiv.textContent = "Recording stopped. Total chunks: " + recordedChunks.length;
+            }
+        }
+
+        function sendChunksToServer() {
+            while (recordedChunks.length > 0) {
+                const chunk = recordedChunks.shift();
+                const reader = new FileReader();
+                reader.onload = function() {
+                    const base64data = reader.result.split(',')[1];
+                    for (let i = 0; i < base64data.length; i += MAX_CHUNK_SIZE) {
+                        const subChunk = base64data.substr(i, MAX_CHUNK_SIZE);
+                        google.script.run
+                            .withSuccessHandler(onChunkStored)
+                            .withFailureHandler(onChunkError)
+                            .storeVideoChunk(subChunk);
+                    }
+                };
+                reader.readAsDataURL(chunk);
+            }
+        }
+
+        function onChunkStored() {
+            statusDiv.textContent = "Chunk stored successfully.";
+        }
+
+        function onChunkError(error) {
+            console.error("Error storing chunk: " + error);
+            statusDiv.textContent = "Error storing chunk: " + error;
+        }
+
+        function updateUI() {
+            startButton.disabled = isRecording;
+            stopButton.disabled = !isRecording;
+        }
+    </script>
+</body>
+</html>
