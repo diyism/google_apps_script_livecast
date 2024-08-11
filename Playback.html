@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Playback</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #videoPlayer { margin: 20px auto; border: 1px solid #ccc; }
+        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+        #status { margin-top: 20px; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Video Playback</h1>
+    <video id="videoPlayer" width="320" height="240" controls></video>
+    <br>
+    <button id="loadButton">Load Video</button>
+    <button id="clearButton">Clear Stored Video</button>
+    <div id="status"></div>
+
+    <script>
+        const loadButton = document.getElementById('loadButton');
+        const clearButton = document.getElementById('clearButton');
+        const statusDiv = document.getElementById('status');
+        const videoPlayer = document.getElementById('videoPlayer');
+
+        loadButton.onclick = loadVideo;
+        clearButton.onclick = clearVideo;
+
+        async function loadVideo() {
+            statusDiv.textContent = "Loading video chunks...";
+            loadButton.disabled = true;
+            const chunks = await google.script.run.withSuccessHandler(playVideo).withFailureHandler(onLoadError).getSortedVideoChunks();
+        }
+
+        function playVideo(chunks) {
+            if (chunks.length === 0) {
+                statusDiv.textContent = "No video chunks found.";
+                loadButton.disabled = false;
+                return;
+            }
+
+            const videoBlob = new Blob(chunks.map(base64ToBlob), { type: 'video/webm' });
+            const videoUrl = URL.createObjectURL(videoBlob);
+            videoPlayer.src = videoUrl;
+            statusDiv.textContent = "Video loaded successfully. Total chunks: " + chunks.length;
+            loadButton.disabled = false;
+        }
+
+        function onLoadError(error) {
+            console.error("Error loading video: " + error);
+            statusDiv.textContent = "Error loading video: " + error;
+            loadButton.disabled = false;
+        }
+
+        function clearVideo() {
+            google.script.run
+                .withSuccessHandler(onClearSuccess)
+                .withFailureHandler(onClearError)
+                .clearVideoChunks();
+        }
+
+        function onClearSuccess(result) {
+            statusDiv.textContent = result;
+            videoPlayer.src = "";
+        }
+
+        function onClearError(error) {
+            console.error("Error clearing video: " + error);
+            statusDiv.textContent = "Error clearing video: " + error;
+        }
+
+        function base64ToBlob(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return new Blob([bytes], { type: 'video/webm' });
+        }
+    </script>
+</body>
+</html>
